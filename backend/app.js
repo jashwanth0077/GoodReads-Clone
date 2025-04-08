@@ -161,321 +161,335 @@ app.post("/logout", (req, res) => {
   });
 });
 
+
+
+
+
 ////////////////////////////////////////////////////
-// APIs for the products
-// use correct status codes and messages mentioned in the lab document
-// TODO: Fetch and display all products from the database
-app.get("/list-products", isAuthenticated, async (req, res) => {
-  try {
-    const products = await pool.query("SELECT * FROM Products");
-    res.status(200).json({ message: "Products fetched successfully", products: products.rows });
-  } catch (error) {
-    res.status(500).json({ message: "Error listing products" });
-  }
-});
 
-// APIs for cart: add_to_cart, display-cart, remove-from-cart
-// TODO: impliment add to cart API which will add the quantity of the product specified by the user to the cart
-app.post("/add-to-cart", isAuthenticated, async (req, res) => {
-  try {
-      const { product_id, quantity } = req.body;
-      const user_id = req.session.userId;
-
-      // Validate request body
-      if (!product_id || !quantity || quantity <= 0) {
-          return res.status(400).json({ message: "Invalid request data" });
-      }
-
-      // Check if product exists
-      const productQuery = await pool.query("SELECT * FROM Products WHERE product_id = $1", [product_id]);
-      if (productQuery.rows.length === 0) {
-          return res.status(400).json({ message: "Invalid product ID" });
-      }
-      
-      const product = productQuery.rows[0];
-
-      // Check if the requested quantity is available in stock
-      if (quantity > product.stock_quantity) {
-          return res.status(400).json({ message: `Insufficient stock for ${product.name}.` });
-      }
-
-      // Check if product is already in cart
-      const cartQuery = await pool.query("SELECT * FROM Cart WHERE user_id = $1 AND item_id = $2", [user_id, product_id]);
-      
-      if (cartQuery.rows.length > 0) {
-          // Update existing cart quantity
-          const newQuantity = cartQuery.rows[0].quantity + quantity;
-          if (newQuantity > product.stock_quantity) {
-              return res.status(400).json({ message: `Insufficient stock for ${product.name}.` });
-          }
-          await pool.query("UPDATE Cart SET quantity = $1 WHERE user_id = $2 AND item_id = $3", [newQuantity, user_id, product_id]);
-      } else {
-          // Insert new item into cart
-          await pool.query("INSERT INTO Cart (user_id, item_id, quantity) VALUES ($1, $2, $3)", [user_id, product_id, quantity]);
-      }
-
-      res.status(200).json({ message: `Successfully added ${quantity} of ${product.name} to your cart.` });
-  } catch (error) {
-      console.error("Error adding to cart:", error);
-      res.status(500).json({ message: "Error adding to cart" });
-  }
-});
-
-
-// TODO: Implement display-cart API which will returns the products in the cart
-app.get("/display-cart", isAuthenticated, async (req, res) => {
+app.get("/recommendations", isAuthenticated, async (req, res) => {
   try {
     const userId = req.session.userId;
-    const cartItems = await pool.query(
-      `SELECT Cart.item_id, Cart.user_id, Products.name as product_name, Cart.quantity as quantity,Products.stock_quantity as stock_quantity ,
-              Products.price as unit_price, (Cart.quantity * Products.price) as total_item_price
-       FROM Cart 
-       JOIN Products ON Cart.item_id = Products.product_id
-       WHERE Cart.user_id = $1`,
+
+    const query = `
+      WITH UserShelfBooks AS (
+        SELECT bbs.book_id
+        FROM BookshelfBooks bbs
+        JOIN Bookshelves bs ON bbs.bookshelf_id = bs.bookshelf_id
+        WHERE bs.user_id = $1
+      ),
+      UserShelfAuthors AS (
+        SELECT DISTINCT ba.author_id
+        FROM BookAuthors ba
+        WHERE ba.book_id IN (SELECT book_id FROM UserShelfBooks)
+      ),
+      UserShelfGenres AS (
+        SELECT DISTINCT bg.genre_id
+        FROM BookGenres bg
+        WHERE bg.book_id IN (SELECT book_id FROM UserShelfBooks)
+      )
+      SELECT 
+        b.book_id,
+        b.title,
+        b.publication_year,
+        b.isbn,
+        COALESCE(
+          json_agg(DISTINCT jsonb_build_object('author_id', a.author_id, 'name', a.name))
+          FILTER (WHERE a.author_id IS NOT NULL), '[]'
+        ) AS authors,
+        COALESCE(
+          json_agg(DISTINCT jsonb_build_object('genre_id', g.genre_id, 'genre_name', g.genre_name))
+          FILTER (WHERE g.genre_id IS NOT NULL), '[]'
+        ) AS genres
+      FROM Books b
+      LEFT JOIN BookAuthors ba ON b.book_id = ba.book_id
+      LEFT JOIN Authors a ON ba.author_id = a.author_id
+      LEFT JOIN BookGenres bg ON b.book_id = bg.book_id
+      LEFT JOIN Genres g ON bg.genre_id = g.genre_id
+      WHERE b.book_id NOT IN (SELECT book_id FROM UserShelfBooks)
+        AND (
+          b.book_id IN (
+             SELECT DISTINCT b2.book_id
+             FROM Books b2
+             JOIN BookAuthors ba2 ON b2.book_id = ba2.book_id
+             WHERE ba2.author_id IN (SELECT author_id FROM UserShelfAuthors)
+          )
+          OR
+          b.book_id IN (
+             SELECT DISTINCT b3.book_id
+             FROM Books b3
+             JOIN BookGenres bg3 ON b3.book_id = bg3.book_id
+             WHERE bg3.genre_id IN (SELECT genre_id FROM UserShelfGenres)
+          )
+        )
+      GROUP BY b.book_id
+      LIMIT 4;
+    `;
+
+    const result = await pool.query(query, [userId]);
+    res.status(200).json({ message: "Recommendations fetched successfully", recommendations: result.rows });
+  } catch (error) {
+    console.error("Error fetching recommendations:", error);
+    res.status(500).json({ message: "Error fetching recommendations" });
+  }
+});
+
+// Create a bookshelf
+app.post("/bookshelves", isAuthenticated, async (req, res) => {
+  try {
+    const { name } = req.body;
+    const userId = req.session.userId;
+    const result = await pool.query(
+      "INSERT INTO Bookshelves (user_id, name) VALUES ($1, $2) RETURNING *",
+      [userId, name]
+    );
+    res.status(200).json({ message: "Bookshelf created", bookshelf: result.rows[0] });
+  } catch (error) {
+    console.error("Create shelf error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all bookshelves for the user
+app.get("/bookshelves", isAuthenticated, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const result = await pool.query(
+      "SELECT * FROM Bookshelves WHERE user_id = $1",
       [userId]
     );
-    
-    if (cartItems.rows.length === 0) {
-      return res.status(200).json({ message: "No items in cart.", cart: [], totalPrice: 0 });
-    }
-    const totalPrice = cartItems.rows.length > 0 
-  ? Number(cartItems.rows.reduce((sum, item) => sum + Number(item.total_item_price), 0).toFixed(2)) 
-  : 0;
-
-    console.log(totalPrice);
-    res.status(200).json({ message: "Cart fetched successfully.", cart: cartItems.rows, totalPrice });
+    res.status(200).json({ bookshelves: result.rows });
   } catch (error) {
-    res.status(500).json({ message: "Error fetching cart" });
+    console.error("Fetch shelves error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// TODO: Implement remove-from-cart API which will remove the product from the cart
-app.post("/remove-from-cart", isAuthenticated, async (req, res) => {
+// Get books in a bookshelf
+app.get("/bookshelves/:bookshelf_id/books", isAuthenticated, async (req, res) => {
   try {
-      const { product_id } = req.body;
-      const user_id = req.session.userId;
-
-      // Validate request body
-      if (!product_id) {
-          return res.status(400).json({ message: "Invalid request data" });
-      }
-
-      // Check if the product exists in the cart
-      const cartQuery = await pool.query("SELECT * FROM Cart WHERE user_id = $1 AND item_id = $2", [user_id, product_id]);
-      
-      if (cartQuery.rows.length === 0) {
-          return res.status(400).json({ message: "Item not present in your cart." });
-      }
-
-      // Remove the item from the cart
-      await pool.query("DELETE FROM Cart WHERE user_id = $1 AND item_id = $2", [user_id, product_id]);
-      
-      res.status(200).json({ message: "Item removed from your cart successfully." });
+    const { bookshelf_id } = req.params;
+    const result = await pool.query(
+      `SELECT b.* FROM Books b
+       JOIN BookshelfBooks bb ON b.book_id = bb.book_id
+       WHERE bb.bookshelf_id = $1`,
+      [bookshelf_id]
+    );
+    res.status(200).json({ books: result.rows });
   } catch (error) {
-      console.error("Error removing item from cart:", error);
-      res.status(500).json({ message: "Error removing item from cart" });
+    console.error("Fetch books in shelf error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// TODO: Implement update-cart API which will update the quantity of the product in the cart
-app.post("/update-cart", isAuthenticated, async (req, res) => {
+// Add a book to a bookshelf
+app.post("/bookshelves/:bookshelf_id/books", isAuthenticated, async (req, res) => {
   try {
-    const { product_id, quantity } = req.body;
-    const userId = req.session.userId;
-    // Check if the session is active
-    if (!userId) {
-      return res.status(400).json({ message: "Unauthorized" });
-    }
-    // console.log(product_id);
-    // Retrieve product stock information
-    const product = await pool.query("SELECT stock_quantity FROM Products WHERE product_id = $1", [product_id]);
-    // console.log(product_id);
-    if (product.rows.length === 0) {
-      return res.status(400).json({ message: "Product not found" });
+    const { bookshelf_id } = req.params;
+    const { book_id } = req.body;
+    const user_id = req.session.userId;
+
+    const check = await pool.query(
+      "SELECT * FROM Bookshelves WHERE bookshelf_id = $1 AND user_id = $2",
+      [bookshelf_id, user_id]
+    );
+    if (check.rows.length === 0) {
+      return res.status(403).json({ message: "Unauthorized or bookshelf not found" });
     }
 
-    const availableStock = product.rows[0].stock_quantity;
+    await pool.query(
+      `INSERT INTO BookshelfBooks (bookshelf_id, book_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [bookshelf_id, book_id]
+    );
 
-    // Check if the product exists in the user's cart
-    const cartItem = await pool.query("SELECT quantity FROM Cart WHERE user_id = $1 AND item_id = $2", [userId, product_id]);
+    res.status(200).json({ message: "Book added to bookshelf" });
+  } catch (error) {
+    console.error("Add book error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
-    let newQuantity = quantity;
-    const new1 = quantity;
-    if (cartItem.rows.length > 0) {
-      // If the product is already in the cart, adjust the quantity
-      newQuantity += cartItem.rows[0].quantity;
-    }
+// Search books by title or author
+app.get("/search-books", isAuthenticated, async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Query required" });
 
-    // If the requested quantity exceeds available stock, return an error
-    if (newQuantity > availableStock) {
-      return res.status(400).json({ message: "Requested quantity exceeds available stock" });
-    }
+    const result = await pool.query(
+      `SELECT DISTINCT b.book_id, b.title, b.publication_year, b.isbn
+       FROM Books b
+       LEFT JOIN BookAuthors ba ON b.book_id = ba.book_id
+       LEFT JOIN Authors a ON ba.author_id = a.author_id
+       WHERE LOWER(b.title) LIKE LOWER('%' || $1 || '%')
+          OR LOWER(a.name) LIKE LOWER('%' || $1 || '%')
+       ORDER BY b.title ASC
+       LIMIT 20`,
+      [query]
+    );
 
-    // If the new quantity is zero or negative, remove the product from the cart
-    if (newQuantity <= 0) {
-      await pool.query("DELETE FROM Cart WHERE user_id = $1 AND item_id = $2", [userId, product_id]);
-    } else {
-      // Otherwise, update or insert the product quantity in the cart
-      await pool.query(
-        "INSERT INTO Cart (user_id, item_id, quantity) VALUES ($1, $2, $3) ON CONFLICT (user_id, item_id) DO UPDATE SET quantity = $3",
-        [userId, product_id, new1]
+    res.status(200).json({ books: result.rows });
+  } catch (error) {
+    console.error("Search books error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+app.get("/default-genres", isAuthenticated, async (req, res) => {
+  try {
+    const genreQuery = await pool.query(
+      `SELECT * FROM Genres ORDER BY RANDOM() LIMIT 2`
+    );
+
+    const books_by_genre = {};
+    for (const genre of genreQuery.rows) {
+      const books = await pool.query(
+        `SELECT b.book_id, b.title, b.publication_year FROM Books b
+         JOIN BookGenres bg ON b.book_id = bg.book_id
+         WHERE bg.genre_id = $1`,
+        [genre.genre_id]
       );
+      books_by_genre[genre.genre_name] = books.rows;
     }
 
-    // Return a success response
-    res.status(200).json({ message: "Cart updated successfully" });
+    res.status(200).json({ genres: genreQuery.rows, books_by_genre });
   } catch (error) {
-    console.error("Error updating cart:", error);
-    res.status(500).json({ message: "Error updating cart" });
+    console.error("Error fetching default genres:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// APIs for placing order and getting confirmation
-// TODO: Implement place-order API, which updates the order,orderitems,cart,orderaddress tables
-app.post("/place-order", isAuthenticated, async (req, res) => {
-  const client = await pool.connect();
+// Search for genre and return its books
+app.get("/search-genre", isAuthenticated, async (req, res) => {
   try {
-    // Ensure the user is logged in
-    const userId = req.session.userId;
-    if (!userId) {
-      return res.status(400).json({ message: "Unauthorized" });
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Query required" });
+
+    const genreResult = await pool.query(
+      `SELECT * FROM Genres WHERE LOWER(genre_name) LIKE LOWER('%' || $1 || '%') LIMIT 1`,
+      [query]
+    );
+
+    if (genreResult.rows.length === 0) {
+      return res.status(404).json({ message: "Genre not found" });
     }
 
-    // Extract the shipping address from the request body
-    const { address } = req.body;
-    if (
-      !address ||
-      !address.street ||
-      !address.city ||
-      !address.state ||
-      !address.pincode
-    ) {
-      return res.status(400).json({ message: "Complete address required" });
-    }
+    const genre = genreResult.rows[0];
+    const booksResult = await pool.query(
+      `SELECT b.book_id, b.title, b.publication_year FROM Books b
+       JOIN BookGenres bg ON b.book_id = bg.book_id
+       WHERE bg.genre_id = $1`,
+      [genre.genre_id]
+    );
 
-    // Retrieve the user's cart items along with product details
-    const cartQuery = `
-      SELECT c.item_id, c.quantity, p.name, p.price, p.stock_quantity
-      FROM Cart c
-      JOIN Products p ON c.item_id = p.product_id
-      WHERE c.user_id = $1
-    `;
-    const cartResult = await client.query(cartQuery, [userId]);
-    const cartItems = cartResult.rows;
-
-    // Check if the cart is empty
-    if (cartItems.length === 0) {
-      return res.status(400).json({ message: "Cart is empty" });
-    }
-
-    // Verify that each cart item has sufficient stock
-    for (const item of cartItems) {
-      if (item.quantity > item.stock_quantity) {
-        return res
-          .status(400)
-          .json({ message: `Insufficient stock for ${item.name}` });
-      }
-    }
-
-    // Calculate the total amount for the order
-    let totalAmount = 0;
-    cartItems.forEach((item) => {
-      totalAmount += item.price * item.quantity;
-    });
-
-    // Begin transaction
-    await client.query("BEGIN");
-
-    // Insert a new order into the Orders table
-    const orderInsertQuery = `
-      INSERT INTO Orders (user_id, total_amount)
-      VALUES ($1, $2)
-      RETURNING order_id
-    `;
-    const orderResult = await client.query(orderInsertQuery, [
-      userId,
-      totalAmount,
-    ]);
-    const orderId = orderResult.rows[0].order_id;
-
-    // Process each cart item:
-    for (const item of cartItems) {
-      // Insert the order item into the OrderItems table
-      const orderItemInsertQuery = `
-        INSERT INTO OrderItems (order_id, product_id, quantity, price)
-        VALUES ($1, $2, $3, $4)
-      `;
-      await client.query(orderItemInsertQuery, [
-        orderId,
-        item.item_id,
-        item.quantity,
-        item.price,
-      ]);
-
-      // Update the stock in the Products table
-      const updateStockQuery = `
-        UPDATE Products
-        SET stock_quantity = stock_quantity - $1
-        WHERE product_id = $2
-      `;
-      await client.query(updateStockQuery, [item.quantity, item.item_id]);
-    }
-
-    // Insert the shipping address into the OrderAddress table
-    const addressInsertQuery = `
-      INSERT INTO OrderAddress (order_id, street, city, state, pincode)
-      VALUES ($1, $2, $3, $4, $5)
-    `;
-    await client.query(addressInsertQuery, [
-      orderId,
-      address.street,
-      address.city,
-      address.state,
-      address.pincode,
-    ]);
-
-    // Clear the user's cart after order placement
-    const clearCartQuery = `DELETE FROM Cart WHERE user_id = $1`;
-    await client.query(clearCartQuery, [userId]);
-
-    // Commit the transaction
-    await client.query("COMMIT");
-
-    return res.status(200).json({ message: "Order placed successfully" });
+    res.status(200).json({ genre, books: booksResult.rows });
   } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("Error placing order:", error);
-    return res.status(500).json({ message: "Error placing order" });
-  } finally {
-    client.release();
+    console.error("Error searching genre:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// API for order confirmation
-// TODO: same as lab4
-app.get("/order-confirmation", isAuthenticated, async (req, res) => {
+
+// New Releases - Books from past year or latest 10
+app.get("/new-releases", isAuthenticated, async (req, res) => {
   try {
+    const currentYear = new Date().getFullYear();
+    const result = await pool.query(
+      `SELECT * FROM Books
+       WHERE publication_year >= $1
+       ORDER BY publication_year DESC, book_id DESC
+       LIMIT 10`,
+      [currentYear - 1]
+    );
+
+    res.status(200).json({ books: result.rows });
+  } catch (error) {
+    console.error("Error fetching new releases:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Choice Awards - High-rated books with enough reviews
+app.get("/choice-awards", isAuthenticated, async (req, res) => {
+  try {
+    const query = `
+      SELECT b.book_id, b.title, b.publication_year,
+             COUNT(r.review_id) AS review_count,
+             AVG(r.rating) AS avg_rating
+      FROM Books b
+      JOIN Reviews r ON b.book_id = r.book_id
+      GROUP BY b.book_id
+      HAVING COUNT(r.review_id) > 10 AND AVG(r.rating) > 4.5
+      ORDER BY avg_rating DESC, review_count DESC
+      LIMIT 10;
+    `;
+    const result = await pool.query(query);
+    res.status(200).json({ books: result.rows });
+  } catch (error) {
+    console.error("Error fetching choice awards:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// Get book detail and author info + rating status for current user
+app.get("/book/:bookId", isAuthenticated, async (req, res) => {
+  try {
+    const { bookId } = req.params;
     const userId = req.session.userId;
-    const orderQuery = await pool.query(
-      "SELECT * FROM Orders WHERE user_id = $1 ORDER BY order_date DESC LIMIT 1",
-      [userId]
+
+    const bookRes = await pool.query("SELECT * FROM Books WHERE book_id = $1", [bookId]);
+    const authorRes = await pool.query(
+      `SELECT a.* FROM Authors a
+       JOIN BookAuthors ba ON a.author_id = ba.author_id
+       WHERE ba.book_id = $1 LIMIT 1`,
+      [bookId]
     );
-    if (orderQuery.rows.length === 0) {
-      return res.status(400).json({ message: "Order not found" });
-    }
-    const order = orderQuery.rows[0];
-    const orderItemsQuery = await pool.query(
-      "SELECT oi.order_id, oi.product_id, oi.quantity, oi.price, p.name AS product_name FROM OrderItems oi JOIN Products p ON oi.product_id = p.product_id WHERE oi.order_id = $1",
-      [order.order_id]
+
+    const ratingCheck = await pool.query(
+      "SELECT * FROM Reviews WHERE book_id = $1 AND user_id = $2",
+      [bookId, userId]
     );
+
+    if (bookRes.rows.length === 0) return res.status(404).json({ message: "Book not found" });
+
     res.status(200).json({
-      message: "Order fetch successfully",
-      order,
-      orderItems: orderItemsQuery.rows,
+      book: bookRes.rows[0],
+      author: authorRes.rows[0] || { name: "Unknown" },
+      hasRated: ratingCheck.rows.length > 0,
     });
   } catch (error) {
-    console.error("Order Confirmation Error:", error);
-    res.status(500).json({ message: "Error fetching order details" });
+    console.error("Error fetching book details:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Submit rating for a book (only once per user)
+app.post("/book/:bookId/rate", isAuthenticated, async (req, res) => {
+  try {
+    const { bookId } = req.params;
+    const { rating } = req.body;
+    const userId = req.session.userId;
+
+    const exists = await pool.query(
+      "SELECT * FROM Reviews WHERE book_id = $1 AND user_id = $2",
+      [bookId, userId]
+    );
+    if (exists.rows.length > 0) {
+      return res.status(409).json({ message: "Already rated" });
+    }
+
+    await pool.query(
+      "INSERT INTO Reviews (book_id, user_id, rating) VALUES ($1, $2, $3)",
+      [bookId, userId, rating]
+    );
+
+    res.status(200).json({ message: "Rating submitted" });
+  } catch (error) {
+    console.error("Error submitting rating:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 

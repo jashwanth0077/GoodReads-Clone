@@ -4,29 +4,24 @@ import Navbar from "../components/Navbar";
 import { apiUrl } from "../config/config";
 
 const Dashboard = () => {
-  const navigate = useNavigate(); // Use this to redirect users
-
+  const navigate = useNavigate();
   const [username, setUsername] = useState("User");
+  const [recommendations, setRecommendations] = useState([]);
 
-  // TODO: Implement the checkStatus function.
-  // This function should check if the user is logged in.
-  // If not logged in, redirect to the login page.
+  // Check login status and get the username.
   useEffect(() => {
     const checkStatus = async () => {
-      // Implement API call here to check login status
-      // If logged in, then use setUsername to display
-      // the username
       try {
         const response = await fetch(`${apiUrl}/isLoggedIn`, {
           method: "GET",
-          credentials: "include", // Sends session cookies
+          credentials: "include",
         });
 
         if (response.ok) {
           const data = await response.json();
-          setUsername(data.username); // Set username from response
+          setUsername(data.username);
         } else {
-          navigate("/login"); // Redirect if not authenticated
+          navigate("/login");
         }
       } catch (error) {
         console.error("Error checking login status:", error);
@@ -36,11 +31,53 @@ const Dashboard = () => {
     checkStatus();
   }, [navigate]);
 
+  // Fetch recommendations based on the user's bookshelves.
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/recommendations`, {
+          method: "GET",
+          credentials: "include",
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setRecommendations(data.recommendations);
+        } else {
+          console.error("Error fetching recommendations");
+        }
+      } catch (error) {
+        console.error("Error fetching recommendations:", error);
+      }
+    };
+
+    fetchRecommendations();
+  }, []);
+
   return (
     <div>
       <Navbar />
       <h1>Hi {username}!</h1>
       <div>Welcome to the Ecommerce App</div>
+
+      <h2>Recommended Books</h2>
+      {recommendations.length === 0 ? (
+        <p>No recommendations available at the moment.</p>
+      ) : (
+        <ul>
+          {recommendations.map((book) => (
+            <li key={book.book_id}>
+              <strong
+              style={{ cursor: "pointer", color: "blue" }}
+  onClick={() => navigate(`/book/${book.book_id}`)}>{book.title}</strong> ({book.publication_year})<br />
+              ISBN: {book.isbn}
+              <br />
+              Authors: {book.authors.map((author) => author.name).join(", ")}
+              <br />
+              Genres: {book.genres.map((genre) => genre.genre_name).join(", ")}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 };

@@ -1,25 +1,22 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { apiUrl } from "../config/config";
 
-
 const Navbar = () => {
-  const navigate = useNavigate(); // Use this to redirect users
+  const navigate = useNavigate();
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // TODO: Implement the handleLogout function.
-  // This function should do an API call to log the user out.
-  // On successful logout, redirect the user to the login page.
   const handleLogout = async (e) => {
     e.preventDefault();
-    // Implement logout logic here
     try {
       const response = await fetch(`${apiUrl}/logout`, {
         method: "POST",
-        credentials: "include", // Ensures cookies (session data) are sent
+        credentials: "include",
       });
 
       if (response.ok) {
-        navigate("/login"); // Redirect to login on success
+        navigate("/login");
       } else {
         console.error("Logout failed");
       }
@@ -28,20 +25,49 @@ const Navbar = () => {
     }
   };
 
-  // TODO: Use JSX to create a navigation bar with buttons for:
-  // - Home
-  // - Products
-  // - Cart
-  // - Logout
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      navigate(`/search?query=${encodeURIComponent(searchTerm.trim())}`);
+      setSearchTerm("");
+    }
+  };
+
   return (
     <nav className="navbar">
       <button onClick={() => navigate("/dashboard")}>Home</button>
-      <button onClick={() => navigate("/products")}>Products</button>
-      <button onClick={() => navigate("/cart")}>Cart</button>
+      <button onClick={() => navigate("/bookshelf")}>My Books</button>
+
+      <button onClick={() => setBrowseOpen(!browseOpen)}>
+        Browse {browseOpen ? "▲" : "▼"}
+      </button>
+      {browseOpen && (
+        <div>
+          <button onClick={() => { navigate("/genres"); setBrowseOpen(false); }}>
+            Genres
+          </button>
+          <button onClick={() => { navigate("/new-releases"); setBrowseOpen(false); }}>
+            New Releases
+          </button>
+          <button onClick={() => { navigate("/choice-awards"); setBrowseOpen(false); }}>
+            Choice Awards
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={handleSearchSubmit}>
+        <input
+          type="text"
+          placeholder="Search by author or book"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </form>
+
       <button onClick={handleLogout}>Logout</button>
     </nav>
   );
 };
-  
 
 export default Navbar;
+
