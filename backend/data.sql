@@ -1,21 +1,43 @@
-INSERT INTO Products (product_id, name, price, stock_quantity) VALUES
-(1, 'Smartphone', 699.99, 50),
-(2, 'Laptop', 999.99, 30),
-(3, 'Refrigerator', 499.99, 20),
-(4, 'Microwave', 199.99, 25),
-(5, 'T-Shirt', 19.99, 100),
-(6, 'Jeans', 49.99, 60),
-(7, 'Novel', 14.99, 80),
-(8, 'Textbook', 89.99, 40),
-(9, 'Tennis Racket', 79.99, 15),
-(10, 'Soccer Ball', 29.99, 50),
-(11, 'Lipstick', 9.99, 200),
-(12, 'Foundation', 24.99, 150),
-(13, 'Toy Car', 14.99, 100),
-(14, 'Puzzle', 9.99, 120),
-(15, 'Dining Table', 299.99, 10),
-(16, 'Sofa', 499.99, 5),
-(17, 'Rice Bag', 19.99, 70),
-(18, 'Cooking Oil', 9.99, 90),
-(19, 'Running Shoes', 79.99, 40),
-(20, 'Sandals', 29.99, 60);
+INSERT INTO Authors (name) VALUES
+('J.K. Rowling'),
+('George Orwell'),
+('J.R.R. Tolkien'),
+('Harper Lee'),
+('F. Scott Fitzgerald');
+
+-- Insert sample books
+INSERT INTO Books (title, publication_year, isbn) VALUES
+('Harry Potter and the Philosopher''s Stone', 1997, '9780747532699'),
+('1984', 1949, '9780451524935'),
+('Animal Farm', 1945, '9780451526342'),
+('The Hobbit', 1937, '9780618968633'),
+('To Kill a Mockingbird', 1960, '9780061120084'),
+('The Great Gatsby', 1925, '9780743273565');
+
+-- Establish relationships between books and authors
+-- Assuming book_id and author_id are auto-generated sequentially starting from 1
+INSERT INTO BookAuthors (book_id, author_id) VALUES
+(1, 1), -- 'Harry Potter and the Philosopher''s Stone' by 'J.K. Rowling'
+(2, 2), -- '1984' by 'George Orwell'
+(3, 2), -- 'Animal Farm' by 'George Orwell'
+(4, 3), -- 'The Hobbit' by 'J.R.R. Tolkien'
+(5, 4), -- 'To Kill a Mockingbird' by 'Harper Lee'
+(6, 5); -- 'The Great Gatsby' by 'F. Scott Fitzgerald'INSERT INTO Products (product_id, name, price, stock_quantity) VALUES
+
+INSERT INTO Genres (genre_name) VALUES
+('Fantasy'),
+('Dystopian'),
+('Adventure'),
+('Classic'),
+('Historical Fiction');
+
+-- Establish relationships between books and genres
+-- Assuming book_id and genre_id are assigned sequentially starting from 1
+INSERT INTO BookGenres (book_id, genre_id) VALUES
+(1, 1), -- 'Harry Potter and the Philosopher''s Stone' is Fantasy
+(2, 2), -- '1984' is Dystopian
+(3, 2), -- 'Animal Farm' is Dystopian
+(4, 1), -- 'The Hobbit' is Fantasy
+(4, 3), -- 'The Hobbit' is also an Adventure
+(5, 4), -- 'To Kill a Mockingbird' is a Classic
+(6, 4); -- 'The Great Gatsby' is a Classic
