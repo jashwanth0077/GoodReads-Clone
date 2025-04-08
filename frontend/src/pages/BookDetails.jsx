@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { apiUrl } from "../config/config";
 
 const BookDetail = () => {
+  const navigate = useNavigate();
   const { bookId } = useParams();
   const [book, setBook] = useState(null);
   const [author, setAuthor] = useState(null);
@@ -42,6 +43,7 @@ const BookDetail = () => {
       if (res.ok) {
         alert("Rating submitted!");
         setHasRated(true);
+        navigate(-1); // 👈 Go back to the previous page
       } else {
         alert("You have already rated this book.");
       }
@@ -65,7 +67,10 @@ const BookDetail = () => {
       ) : (
         <div>
           <label>Rate this book: </label>
-          <select value={userRating} onChange={(e) => setUserRating(Number(e.target.value))}>
+          <select
+            value={userRating}
+            onChange={(e) => setUserRating(Number(e.target.value))}
+          >
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
@@ -73,6 +78,9 @@ const BookDetail = () => {
           <button onClick={handleSubmitRating}>Submit Rating</button>
         </div>
       )}
+
+      <br />
+      <button onClick={() => navigate(-1)}>← Back</button>
     </div>
   );
 };

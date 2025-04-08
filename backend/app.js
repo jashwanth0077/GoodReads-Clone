@@ -167,6 +167,44 @@ app.post("/logout", (req, res) => {
 
 ////////////////////////////////////////////////////
 
+app.get("/search-suggestions", isAuthenticated, async (req, res) => {
+  const { query, type } = req.query;
+
+  if (!query || !["book", "author"].includes(type)) {
+    return res.status(400).json({ message: "Invalid query or type" });
+  }
+
+  const searchSQL =
+    type === "book"
+      ? `
+        SELECT b.book_id, b.title, a.name AS author_name
+        FROM Books b
+        JOIN BookAuthors ba ON b.book_id = ba.book_id
+        JOIN Authors a ON ba.author_id = a.author_id
+        WHERE LOWER(b.title) LIKE LOWER('%' || $1 || '%')
+        ORDER BY b.title ASC
+        LIMIT 4;
+      `
+      : `
+        SELECT b.book_id, b.title, a.name AS author_name
+        FROM Books b
+        JOIN BookAuthors ba ON b.book_id = ba.book_id
+        JOIN Authors a ON ba.author_id = a.author_id
+        WHERE LOWER(a.name) LIKE LOWER('%' || $1 || '%')
+        ORDER BY a.name ASC
+        LIMIT 4;
+      `;
+
+  try {
+    const result = await pool.query(searchSQL, [query]);
+    res.status(200).json({ books: result.rows });
+  } catch (err) {
+    console.error("Search suggestion error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
 app.get("/recommendations", isAuthenticated, async (req, res) => {
   try {
     const userId = req.session.userId;
