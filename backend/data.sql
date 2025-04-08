@@ -17,12 +17,12 @@ INSERT INTO Books (book_id, title, publication_year, isbn) VALUES
 
 -- BOOK↔AUTHORS
 INSERT INTO BookAuthors (book_id, author_id) VALUES
-  (1, 1),  -- Harry Potter → J.K. Rowling
-  (2, 2),  -- 1984 → George Orwell
-  (3, 2),  -- Animal Farm → George Orwell
-  (4, 3),  -- The Hobbit → J.R.R. Tolkien
-  (5, 4),  -- To Kill a Mockingbird → Harper Lee
-  (6, 5);  -- The Great Gatsby → F. Scott Fitzgerald
+  (1, 1),
+  (2, 2),
+  (3, 2),
+  (4, 3),
+  (5, 4), 
+  (6, 5); 
 
 -- GENRES
 INSERT INTO Genres (genre_id, genre_name) VALUES
@@ -34,13 +34,13 @@ INSERT INTO Genres (genre_id, genre_name) VALUES
 
 -- BOOK↔GENRES
 INSERT INTO BookGenres (book_id, genre_id) VALUES
-  (1, 1),  -- Harry Potter → Fantasy
-  (2, 2),  -- 1984 → Dystopian
-  (3, 2),  -- Animal Farm → Dystopian
-  (3, 4),  -- Animal Farm → Classic
-  (4, 1),  -- The Hobbit → Fantasy
-  (4, 3),  -- The Hobbit → Adventure
-  (5, 4),  -- To Kill a Mockingbird → Classic
-  (5, 5),  -- To Kill a Mockingbird → Historical Fiction
-  (6, 4),  -- The Great Gatsby → Classic
-  (6, 5);  -- The Great Gatsby → Historical Fiction
+  (1, 1),
+  (2, 2),
+  (3, 2),
+  (3, 4),
+  (4, 1),
+  (4, 3),
+  (5, 4),
+  (5, 5),
+  (6, 4),
+  (6, 5);
