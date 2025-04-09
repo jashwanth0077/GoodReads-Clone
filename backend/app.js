@@ -273,6 +273,7 @@ app.get("/recommendations", isAuthenticated, async (req, res) => {
 });
 
 // Create a bookshelf
+// Create a new bookshelf
 app.post("/bookshelves", isAuthenticated, async (req, res) => {
   try {
     const { name } = req.body;
@@ -288,15 +289,25 @@ app.post("/bookshelves", isAuthenticated, async (req, res) => {
   }
 });
 
-// Get all bookshelves for the user
+// Get all bookshelves for the user (with books inside each shelf)
 app.get("/bookshelves", isAuthenticated, async (req, res) => {
   try {
     const userId = req.session.userId;
-    const result = await pool.query(
-      "SELECT * FROM Bookshelves WHERE user_id = $1",
-      [userId]
+    const shelfRes = await pool.query("SELECT * FROM Bookshelves WHERE user_id = $1", [userId]);
+
+    const bookshelves = await Promise.all(
+      shelfRes.rows.map(async (shelf) => {
+        const booksRes = await pool.query(
+          `SELECT b.* FROM Books b
+           JOIN BookshelfBooks bb ON b.book_id = bb.book_id
+           WHERE bb.bookshelf_id = $1`,
+          [shelf.bookshelf_id]
+        );
+        return { ...shelf, books: booksRes.rows };
+      })
     );
-    res.status(200).json({ bookshelves: result.rows });
+
+    res.status(200).json({ bookshelves });
   } catch (error) {
     console.error("Fetch shelves error:", error);
     res.status(500).json({ message: "Server error" });
@@ -429,6 +440,19 @@ app.get("/search-genre", isAuthenticated, async (req, res) => {
   }
 });
 
+app.get("/genre-suggestions", isAuthenticated, async (req, res) => {
+  try {
+    const query = req.query.query || "";
+    const result = await pool.query(
+      `SELECT DISTINCT genre_name FROM Genres WHERE LOWER(genre_name) LIKE LOWER($1) LIMIT 5`,
+      [`%${query}%`]
+    );
+    res.json({ suggestions: result.rows.map(row => row.genre_name) });
+  } catch (err) {
+    console.error("Genre suggestion error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // New Releases - Books from past year or latest 10
 app.get("/new-releases", isAuthenticated, async (req, res) => {
@@ -476,72 +500,263 @@ app.get("/choice-awards", isAuthenticated, async (req, res) => {
 // GET: Fetch book details with author and user rating info
 // GET: Fetch book details with author and user rating info
 // GET: Fetch book details with author and user review info (rating and message)
+// GET: Fetch book details with author, user review, and review summaries
+// --- GET /book/:bookId ---
+
+// --- GET /book/:bookId ---
 app.get("/book/:bookId", isAuthenticated, async (req, res) => {
   try {
     const bookId = parseInt(req.params.bookId, 10);
     const userId = req.session.userId;
-    console.log("Book ID:", bookId);
-
     if (isNaN(bookId)) {
       return res.status(400).json({ message: "Invalid book ID" });
     }
-    console.log("Fetching book details for bookId:", bookId, "userId:", userId);
-    const bookRes = await pool.query("SELECT * FROM Books WHERE book_id = $1", [bookId]);
-    if (bookRes.rows.length === 0) {
+
+    // 1) fetch book + author
+    const bookRes = await pool.query(
+      `SELECT b.*, a.name AS author_name
+         FROM Books b
+    LEFT JOIN BookAuthors ba ON ba.book_id = b.book_id
+    LEFT JOIN Authors     a  ON a.author_id = ba.author_id
+        WHERE b.book_id = $1
+        LIMIT 1`,
+      [bookId]
+    );
+    if (!bookRes.rows.length) {
       return res.status(404).json({ message: "Book not found" });
     }
+    const book = bookRes.rows[0];
 
-    const authorRes = await pool.query(
-      `SELECT a.* FROM Authors a
-       JOIN BookAuthors ba ON a.author_id = ba.author_id
-       WHERE ba.book_id = $1 LIMIT 1`,
+    // 2) this user's review (if any)
+    const userRev = await pool.query(
+      "SELECT rating, message FROM Reviews WHERE book_id=$1 AND user_id=$2",
+      [bookId, userId]
+    );
+    const hasRated      = userRev.rows.length > 0;
+    const userRating    = hasRated ? userRev.rows[0].rating : null;
+    const reviewMessage = hasRated ? userRev.rows[0].message : "";
+
+    // 3) count total reviews
+    const cntRes = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM Reviews WHERE book_id = $1",
+      [bookId]
+    );
+    const total = parseInt(cntRes.rows[0].cnt, 10);
+    // 4) calculate average rating only if there is at least one review.
+    let averageRating = null;
+    if (total > 0) {
+      // const avgRes = await pool.query(
+      //   `SELECT ROUND(AVG(rating)::numeric,2)::float AS avgRating
+      //      FROM Reviews
+      //     WHERE book_id = $1`,
+      //   [bookId]
+      //   // `SELECT AVG(rating) FROM Reviews WHERE book_id = $1`, [bookId]
+      // );
+      // averageRating = avgRes.rows[0].avgRating;
+    const avgRes = await pool.query(
+      `SELECT ROUND(AVG(rating)::numeric, 2)::float FROM Reviews WHERE book_id = $1`,
       [bookId]
     );
 
-    // Fetch both rating and review message for the current user (if exists)
-    const userReview = await pool.query(
-      "SELECT rating, message FROM Reviews WHERE book_id = $1 AND user_id = $2",
-      [bookId, userId]
-    );
+    // Get the first value in the returned row object
+    averageRating = Object.values(avgRes.rows[0])[0];
+    }
+    
+    // 5) fetch reviews (all if <=5, else top3/bottom2 shuffled)
+    let reviews = [];
+    if (total <= 5) {
+      const allRes = await pool.query(
+        `SELECT r.review_id, r.rating, r.message, u.username
+           FROM Reviews r
+           JOIN Users   u ON u.user_id = r.user_id
+          WHERE r.book_id = $1
+          ORDER BY r.review_date DESC`,
+        [bookId]
+      );
+      reviews = allRes.rows;
+    } else {
+      const topRes = await pool.query(
+        `SELECT r.review_id, r.rating, r.message, u.username
+           FROM Reviews r
+           JOIN Users   u ON u.user_id = r.user_id
+          WHERE r.book_id = $1
+          ORDER BY r.rating DESC, r.review_date DESC
+          LIMIT 3`,
+        [bookId]
+      );
+      let bottomRes;
+      if (topRes.rows.length) {
+        const topIds = topRes.rows.map(r => r.review_id);
+        bottomRes = await pool.query(
+          `SELECT r.review_id, r.rating, r.message, u.username
+             FROM Reviews r
+             JOIN Users   u ON u.user_id = r.user_id
+            WHERE r.book_id = $1
+              AND NOT (r.review_id = ANY($2::int[]))
+            ORDER BY r.rating ASC, r.review_date DESC
+            LIMIT 2`,
+          [bookId, topIds]
+        );
+      } else {
+        bottomRes = await pool.query(
+          `SELECT r.review_id, r.rating, r.message, u.username
+             FROM Reviews r
+             JOIN Users   u ON u.user_id = r.user_id
+            WHERE r.book_id = $1
+            ORDER BY r.rating ASC, r.review_date DESC
+            LIMIT 2`,
+          [bookId]
+        );
+      }
+      reviews = [...topRes.rows, ...bottomRes.rows];
+    }
 
+    // 6) shuffle the reviews array
+    for (let i = reviews.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [reviews[i], reviews[j]] = [reviews[j], reviews[i]];
+    }
+
+    // 7) send everything including reviewCount
     res.status(200).json({
-      book: bookRes.rows[0],
-      author: authorRes.rows[0] || { name: "Unknown" },
-      hasRated: userReview.rows.length > 0,
-      userRating: userReview.rows.length > 0 ? userReview.rows[0].rating : "Unrated",
-      reviewMessage: userReview.rows.length > 0 ? userReview.rows[0].message : ""
+      book: {
+        book_id: book.book_id,
+        title: book.title,
+        publication_year: book.publication_year,
+        isbn: book.isbn
+      },
+      author: { name: book.author_name || "Unknown" },
+      hasRated,
+      userRating,
+      reviewMessage,
+      averageRating,   // a number if reviews exist, else null
+      reviewCount: total,
+      reviews
     });
+
   } catch (error) {
     console.error("Error fetching book details:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// POST: Submit rating and review message for a book (only once per user)
+
+// --- POST /book/:bookId/rate ---
 app.post("/book/:bookId/rate", isAuthenticated, async (req, res) => {
   try {
     const bookId = parseInt(req.params.bookId, 10);
-    const { rating, message } = req.body;
     const userId = req.session.userId;
-
-    if (isNaN(bookId)) {
-      return res.status(400).json({ message: "Invalid book ID" });
+    const { rating, message } = req.body;
+    if (isNaN(bookId) || ![1,2,3,4,5].includes(rating)) {
+      return res.status(400).json({ message: "Invalid input" });
     }
 
+    // prevent double-rating
     const exists = await pool.query(
-      "SELECT * FROM Reviews WHERE book_id = $1 AND user_id = $2",
+      "SELECT 1 FROM Reviews WHERE book_id=$1 AND user_id=$2",
       [bookId, userId]
     );
-    if (exists.rows.length > 0) {
+    if (exists.rows.length) {
       return res.status(409).json({ message: "Already rated" });
     }
 
+    // insert new review
     await pool.query(
-      "INSERT INTO Reviews (book_id, user_id, rating, message) VALUES ($1, $2, $3, $4)",
-      [bookId, userId, rating, message]
+      `INSERT INTO Reviews (book_id, user_id, rating, message)
+       VALUES ($1, $2, $3, $4)`,
+      [bookId, userId, rating, message || null]
     );
 
-    res.status(200).json({ message: "Rating submitted" });
+    // recalc total
+    const cntRes = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM Reviews WHERE book_id = $1",
+      [bookId]
+    );
+    const total = parseInt(cntRes.rows[0].cnt, 10);
+
+    // recalc average rating only if reviews exist
+    let averageRating = null;
+    if (total > 0) {
+      // const avgRes = await pool.query(
+      //   `SELECT ROUND(AVG(rating)::numeric,2)::float AS avgRating
+      //      FROM Reviews
+      //     WHERE book_id = $1`,
+      //   [bookId]
+      // );
+      // averageRating = avgRes.rows[0].avgRating;
+      const avgRes = await pool.query(
+        `SELECT ROUND(AVG(rating)::numeric, 2)::float FROM Reviews WHERE book_id = $1`,
+        [bookId]
+      );
+
+      // Get the first value in the returned row object
+      averageRating = Object.values(avgRes.rows[0])[0];
+    }
+
+    // fetch reviews exactly as above
+    let reviews = [];
+    if (total <= 5) {
+      const allRes = await pool.query(
+        `SELECT r.review_id, r.rating, r.message, u.username
+           FROM Reviews r
+           JOIN Users   u ON u.user_id = r.user_id
+          WHERE r.book_id = $1
+          ORDER BY r.review_date DESC`,
+        [bookId]
+      );
+      reviews = allRes.rows;
+    } else {
+      const topRes = await pool.query(
+        `SELECT r.review_id, r.rating, r.message, u.username
+           FROM Reviews r
+           JOIN Users   u ON u.user_id = r.user_id
+          WHERE r.book_id = $1
+          ORDER BY r.rating DESC, r.review_date DESC
+          LIMIT 3`,
+        [bookId]
+      );
+      let bottomRes;
+      if (topRes.rows.length) {
+        const topIds = topRes.rows.map(r => r.review_id);
+        bottomRes = await pool.query(
+          `SELECT r.review_id, r.rating, r.message, u.username
+             FROM Reviews r
+             JOIN Users   u ON u.user_id = r.user_id
+            WHERE r.book_id = $1
+              AND NOT (r.review_id = ANY($2::int[]))
+            ORDER BY r.rating ASC, r.review_date DESC
+            LIMIT 2`,
+          [bookId, topIds]
+        );
+      } else {
+        bottomRes = await pool.query(
+          `SELECT r.review_id, r.rating, r.message, u.username
+             FROM Reviews r
+             JOIN Users   u ON u.user_id = r.user_id
+            WHERE r.book_id = $1
+            ORDER BY r.rating ASC, r.review_date DESC
+            LIMIT 2`,
+          [bookId]
+        );
+      }
+      reviews = [...topRes.rows, ...bottomRes.rows];
+    }
+    for (let i = reviews.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [reviews[i], reviews[j]] = [reviews[j], reviews[i]];
+    }
+
+    // respond with updated data including reviewCount
+    res.status(200).json({
+      message: "Rating submitted",
+      averageRating, // a number if reviews exist, else null
+      reviewCount: total,
+      reviews,
+      hasRated: true,
+      userRating: rating,
+      reviewMessage: message || ""
+    });
+
   } catch (error) {
     console.error("Error submitting rating:", error);
     res.status(500).json({ message: "Server error" });
