@@ -473,13 +473,20 @@ app.get("/choice-awards", isAuthenticated, async (req, res) => {
 
 
 // Get book detail and author info + rating status for current user
+// GET: Fetch book details with author and user rating info
+// GET: Fetch book details with author and user rating info
+// GET: Fetch book details with author and user review info (rating and message)
 app.get("/book/:bookId", isAuthenticated, async (req, res) => {
   try {
-    const { bookId } = req.params;
+    const bookId = parseInt(req.params.bookId, 10);
     const userId = req.session.userId;
+    console.log("Book ID:", bookId);
 
+    if (isNaN(bookId)) {
+      return res.status(400).json({ message: "Invalid book ID" });
+    }
+    console.log("Fetching book details for bookId:", bookId, "userId:", userId);
     const bookRes = await pool.query("SELECT * FROM Books WHERE book_id = $1", [bookId]);
-
     if (bookRes.rows.length === 0) {
       return res.status(404).json({ message: "Book not found" });
     }
@@ -491,8 +498,9 @@ app.get("/book/:bookId", isAuthenticated, async (req, res) => {
       [bookId]
     );
 
+    // Fetch both rating and review message for the current user (if exists)
     const userReview = await pool.query(
-      "SELECT rating FROM Reviews WHERE book_id = $1 AND user_id = $2",
+      "SELECT rating, message FROM Reviews WHERE book_id = $1 AND user_id = $2",
       [bookId, userId]
     );
 
@@ -500,7 +508,8 @@ app.get("/book/:bookId", isAuthenticated, async (req, res) => {
       book: bookRes.rows[0],
       author: authorRes.rows[0] || { name: "Unknown" },
       hasRated: userReview.rows.length > 0,
-      userRating: userReview.rows[0]?.rating || "Unrated",
+      userRating: userReview.rows.length > 0 ? userReview.rows[0].rating : "Unrated",
+      reviewMessage: userReview.rows.length > 0 ? userReview.rows[0].message : ""
     });
   } catch (error) {
     console.error("Error fetching book details:", error);
@@ -508,13 +517,16 @@ app.get("/book/:bookId", isAuthenticated, async (req, res) => {
   }
 });
 
-
-// Submit rating for a book (only once per user)
+// POST: Submit rating and review message for a book (only once per user)
 app.post("/book/:bookId/rate", isAuthenticated, async (req, res) => {
   try {
-    const { bookId } = req.params;
-    const { rating } = req.body;
+    const bookId = parseInt(req.params.bookId, 10);
+    const { rating, message } = req.body;
     const userId = req.session.userId;
+
+    if (isNaN(bookId)) {
+      return res.status(400).json({ message: "Invalid book ID" });
+    }
 
     const exists = await pool.query(
       "SELECT * FROM Reviews WHERE book_id = $1 AND user_id = $2",
@@ -525,8 +537,8 @@ app.post("/book/:bookId/rate", isAuthenticated, async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO Reviews (book_id, user_id, rating) VALUES ($1, $2, $3)",
-      [bookId, userId, rating]
+      "INSERT INTO Reviews (book_id, user_id, rating, message) VALUES ($1, $2, $3, $4)",
+      [bookId, userId, rating, message]
     );
 
     res.status(200).json({ message: "Rating submitted" });
@@ -535,6 +547,9 @@ app.post("/book/:bookId/rate", isAuthenticated, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
+
 
 ////////////////////////////////////////////////////
 // Start the server

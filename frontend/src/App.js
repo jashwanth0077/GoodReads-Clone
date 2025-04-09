@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 
 import Navbar from "./components/Navbar";
 import Signup from "./pages/Signup";
@@ -12,18 +12,22 @@ import Genres from "./pages/Genres";
 import NewReleases from "./pages/NewReleases";
 import ChoiceAwards from "./pages/ChoiceAwards";
 import BookDetails from "./pages/BookDetails";
+import Modal from "./components/Modal";
 
 function App() {
   const location = useLocation();
+  const state = location.state;
 
   // Hide Navbar on these routes
   const hideNavbarRoutes = ["/", "/login", "/signup"];
   const shouldShowNavbar = !hideNavbarRoutes.includes(location.pathname);
+
   return (
-  //  <Router>
-  <>
-  {shouldShowNavbar && <Navbar />}
-      <Routes>
+    <>
+      {shouldShowNavbar && <Navbar />}
+
+      {/* Main Routes */}
+      <Routes location={state?.backgroundLocation || location}>
         <Route path="/" element={<Home />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
@@ -32,10 +36,24 @@ function App() {
         <Route path="/genres" element={<Genres />} />
         <Route path="/new-releases" element={<NewReleases />} />
         <Route path="/choice-awards" element={<ChoiceAwards />} />
-        <Route path="/book-details" element={<BookDetails />} />
+        <Route path="/book/:bookId" element={<BookDetails />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-  </>
+
+      {/* Modal route for BookDetails */}
+      {state?.backgroundLocation && (
+        <Routes>
+          <Route
+            path="/book/:bookId"
+            element={
+              <Modal>
+                <BookDetails />
+              </Modal>
+            }
+          />
+        </Routes>
+      )}
+    </>
   );
 }
 
