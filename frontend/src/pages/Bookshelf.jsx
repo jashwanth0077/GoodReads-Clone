@@ -111,7 +111,6 @@ const Bookshelves = () => {
 
   return (
     <div>
-      <Navbar />
       <h1>My Bookshelves</h1>
 
       <div>

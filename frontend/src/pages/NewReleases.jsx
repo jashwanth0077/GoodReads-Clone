@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import Navbar from "../components/Navbar";
 import { apiUrl } from "../config/config";
 
 const NewReleases = () => {
+  const navigate = useNavigate();
   const [newBooks, setNewBooks] = useState([]);
 
   useEffect(() => {
@@ -26,7 +28,6 @@ const NewReleases = () => {
 
   return (
     <div>
-      <Navbar />
       <h1>New Releases</h1>
       {newBooks.length === 0 ? (
         <p>No recent books found.</p>

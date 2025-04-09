@@ -56,7 +56,6 @@ const BookDetail = () => {
 
   return (
     <div>
-      <Navbar />
       <h1>{book.title}</h1>
       <p><strong>Author:</strong> {author.name}</p>
       <p><strong>Published Year:</strong> {book.publication_year}</p>

@@ -55,7 +55,6 @@ const Dashboard = () => {
 
   return (
     <div>
-      <Navbar />
       <h1>Hi {username}!</h1>
       <div>Welcome to the Ecommerce App</div>
 

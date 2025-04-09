@@ -479,6 +479,11 @@ app.get("/book/:bookId", isAuthenticated, async (req, res) => {
     const userId = req.session.userId;
 
     const bookRes = await pool.query("SELECT * FROM Books WHERE book_id = $1", [bookId]);
+
+    if (bookRes.rows.length === 0) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+
     const authorRes = await pool.query(
       `SELECT a.* FROM Authors a
        JOIN BookAuthors ba ON a.author_id = ba.author_id
@@ -486,23 +491,23 @@ app.get("/book/:bookId", isAuthenticated, async (req, res) => {
       [bookId]
     );
 
-    const ratingCheck = await pool.query(
-      "SELECT * FROM Reviews WHERE book_id = $1 AND user_id = $2",
+    const userReview = await pool.query(
+      "SELECT rating FROM Reviews WHERE book_id = $1 AND user_id = $2",
       [bookId, userId]
     );
-
-    if (bookRes.rows.length === 0) return res.status(404).json({ message: "Book not found" });
 
     res.status(200).json({
       book: bookRes.rows[0],
       author: authorRes.rows[0] || { name: "Unknown" },
-      hasRated: ratingCheck.rows.length > 0,
+      hasRated: userReview.rows.length > 0,
+      userRating: userReview.rows[0]?.rating || "Unrated",
     });
   } catch (error) {
     console.error("Error fetching book details:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // Submit rating for a book (only once per user)
 app.post("/book/:bookId/rate", isAuthenticated, async (req, res) => {

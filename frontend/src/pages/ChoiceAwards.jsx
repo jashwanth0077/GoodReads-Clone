@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import Navbar from "../components/Navbar";
 import { apiUrl } from "../config/config";
 
 const ChoiceAwards = () => {
+  const navigate = useNavigate();
   const [books, setBooks] = useState([]);
 
   useEffect(() => {
@@ -26,7 +28,6 @@ const ChoiceAwards = () => {
 
   return (
     <div>
-      <Navbar />
       <h1>Choice Awards</h1>
       {books.length === 0 ? (
         <p>No award-winning books available yet.</p>

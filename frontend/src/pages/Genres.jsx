@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import Navbar from "../components/Navbar";
 import { apiUrl } from "../config/config";
 
 const Genre = () => {
+  const navigate = useNavigate();
   const [genreQuery, setGenreQuery] = useState("");
   const [genres, setGenres] = useState([]);
   const [booksByGenre, setBooksByGenre] = useState([]);
@@ -48,7 +50,6 @@ const Genre = () => {
 
   return (
     <div>
-      <Navbar />
       <h1>Browse by Genre</h1>
 
       <form onSubmit={handleGenreSearch}>

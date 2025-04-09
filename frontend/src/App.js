@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 
 import Navbar from "./components/Navbar";
 import Signup from "./pages/Signup";
@@ -14,10 +14,15 @@ import ChoiceAwards from "./pages/ChoiceAwards";
 import BookDetails from "./pages/BookDetails";
 
 function App() {
+  const location = useLocation();
+
+  // Hide Navbar on these routes
+  const hideNavbarRoutes = ["/", "/login", "/signup"];
+  const shouldShowNavbar = !hideNavbarRoutes.includes(location.pathname);
   return (
   //  <Router>
   <>
-  <Navbar />
+  {shouldShowNavbar && <Navbar />}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/signup" element={<Signup />} />
