@@ -274,20 +274,49 @@ app.get("/recommendations", isAuthenticated, async (req, res) => {
 
 // Create a bookshelf
 // Create a new bookshelf
+// app.post("/bookshelves", isAuthenticated, async (req, res) => {
+//   try {
+//     const { name } = req.body;
+//     const userId = req.session.userId;
+//     const result = await pool.query(
+//       "INSERT INTO Bookshelves (user_id, name) VALUES ($1, $2) RETURNING *",
+//       [userId, name]
+//     );
+//     res.status(200).json({ message: "Bookshelf created", bookshelf: result.rows[0] });
+//   } catch (error) {
+//     console.error("Create shelf error:", error);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// });
+
 app.post("/bookshelves", isAuthenticated, async (req, res) => {
   try {
     const { name } = req.body;
     const userId = req.session.userId;
+
+    // Check if bookshelf with same name already exists for this user
+    const existing = await pool.query(
+      "SELECT * FROM Bookshelves WHERE user_id = $1 AND LOWER(name) = LOWER($2)",
+      [userId, name]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ message: "Bookshelf with this name already exists" });
+    }
+
+    // Insert new shelf
     const result = await pool.query(
       "INSERT INTO Bookshelves (user_id, name) VALUES ($1, $2) RETURNING *",
       [userId, name]
     );
+
     res.status(200).json({ message: "Bookshelf created", bookshelf: result.rows[0] });
   } catch (error) {
     console.error("Create shelf error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // Get all bookshelves for the user (with books inside each shelf)
 app.get("/bookshelves", isAuthenticated, async (req, res) => {
@@ -488,12 +517,20 @@ app.get("/choice-awards", isAuthenticated, async (req, res) => {
       LIMIT 10;
     `;
     const result = await pool.query(query);
-    res.status(200).json({ books: result.rows });
+
+    // Convert avg_rating to a number using parseFloat
+    const books = result.rows.map(book => ({
+      ...book,
+      avg_rating: book.avg_rating ? parseFloat(book.avg_rating) : null
+    }));
+
+    res.status(200).json({ books });
   } catch (error) {
     console.error("Error fetching choice awards:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 // Get book detail and author info + rating status for current user

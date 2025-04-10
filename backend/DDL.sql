@@ -60,3 +60,13 @@ CREATE TABLE BookshelfBooks (
     FOREIGN KEY (bookshelf_id) REFERENCES Bookshelves(bookshelf_id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES Books(book_id) ON DELETE CASCADE
 );-- Table for storing book information
+
+CREATE TABLE Reviews (
+     review_id SERIAL PRIMARY KEY,
+     book_id INTEGER NOT NULL,
+     user_id INTEGER NOT NULL,
+     rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+     message TEXT,
+     review_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+     FOREIGN KEY (book_id) REFERENCES Books(book_id) ON DELETE CASCADE,     FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+ );
